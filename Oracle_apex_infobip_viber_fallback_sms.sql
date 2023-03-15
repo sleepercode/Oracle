@@ -6,6 +6,7 @@ DECLARE
   l_max_attempts NUMBER := 3;
   l_attempt NUMBER := 1;
   l_success BOOLEAN := FALSE;
+  l_fallback_api VARCHAR2(4000) := 'SMS'; -- Change to 'EMAIL' to fallback to email API
 BEGIN
   l_headers := apex_web_service.g_request_headers;
   apex_web_service.set_header(l_headers, 'Authorization', 'App {api_key}');
@@ -25,16 +26,22 @@ BEGIN
       -- Viber message was sent successfully
       l_success := TRUE;
     ELSE
-      -- Viber message failed to send, retry or fallback to SMS
+      -- Viber message failed to send, retry or fallback to SMS or email
       l_attempt := l_attempt + 1;
       
       IF l_attempt <= l_max_attempts THEN
         -- Wait for a few seconds before retrying
         DBMS_LOCK.SLEEP(5);
       ELSE
-        -- Fallback to secondary SMS API
-        l_url := 'https://api.example.com/sms/send';
-        l_body := '{"message":"Hello, this is an SMS fallback message!","phone_number":"{phone_number}"}';
+        -- Fallback to secondary SMS or email API
+        IF l_fallback_api = 'SMS' THEN
+          l_url := 'https://api.example.com/sms/send';
+          l_body := '{"message":"Hello, this is an SMS fallback message!","phone_number":"{phone_number}"}';
+        ELSIF l_fallback_api = 'EMAIL' THEN
+          l_url := 'https://api.example.com/email/send';
+          l_body := '{"subject":"Viber message failed","body":"Hello, this is an email fallback message!","email_address":"{email_address}"}';
+        END IF;
+        
         l_response := apex_web_service.make_rest_request(
           p_url => l_url,
           p_http_method => 'POST',
@@ -43,11 +50,11 @@ BEGIN
         );
         
         IF apex_web_service.get_status_code >= 200 AND apex_web_service.get_status_code < 300 THEN
-          -- SMS message was sent successfully
+          -- SMS or email message was sent successfully
           l_success := TRUE;
         ELSE
-          -- SMS message failed to send after max attempts
-          DBMS_OUTPUT.PUT_LINE('SMS message failed to send after ' || l_max_attempts || ' attempts');
+          -- SMS or email message failed to send after max attempts
+          DBMS_OUTPUT.PUT_LINE(l_fallback_api || ' message failed to send after ' || l_max_attempts || ' attempts');
         END IF;
       END IF;
     END IF;
